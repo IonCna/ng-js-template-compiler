@@ -1,0 +1,39 @@
+{
+  "name": "ng-js-template-compiler",
+  "version": "0.1.0",
+  "description": "Transform del pipeline de ngjs: traduce en los templates los bindings de inputs con nombre de atributo nativo (disabled=\"x\" → ng-disabled=\"x\") según los componentes que matchea cada elemento, como [disabled]=\"x\" en Angular.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "author": "Max Flores",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "@swc/core": "^1.16.2",
+    "magic-string": "^1.4.2",
+    "ng-js-compiler": "link:ng-js-compiler",
+    "parse5": "^8.0.1"
+  },
+  "devDependencies": {
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "@types/bun": "latest",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.0"
+  }
+}

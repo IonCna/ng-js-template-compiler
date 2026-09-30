@@ -18,8 +18,19 @@ const RESERVED_ATTRIBUTE = new RegExp(`(^|[\\s"':_-])(${Object.keys(ComponentBin
  * de un elemento nativo. Queda igual: un output (lo saca del DOM el compilador), un input `@` (atributo estático, como
  * en Angular) y, en un nativo, el atributo estático (`disabled`, `disabled=""`, `disabled="disabled"`) o interpolado.
  */
+export interface RewriteOptions {
+  /** Validar los `@Input({ required: true })` (por defecto sí). */
+  checkRequired?: boolean;
+}
+
 export class TemplateRewriter {
-  private constructor(private readonly matchers: Matcher[]) {}
+  /** Hay algún `@Input({ required: true })`: todo template se recorre para validarlo, aunque no haya nada que traducir. */
+  private readonly hasRequired: boolean;
+  private checkRequired = true;
+
+  private constructor(private readonly matchers: Matcher[]) {
+    this.hasRequired = matchers.some((matcher) => matcher.declaration.inputs.some((input) => input.required));
+  }
 
   static from(declarations: ManifestDeclaration[]): TemplateRewriter {
     const matchers = declarations.flatMap((declaration) => {
@@ -32,9 +43,13 @@ export class TemplateRewriter {
     return new TemplateRewriter(matchers);
   }
 
-  /** El template reescrito, o `undefined` si no hay nada que traducir (queda el original, byte por byte). */
-  rewrite(html: string): string | undefined {
-    if (!RESERVED_ATTRIBUTE.test(html)) return undefined;
+  /**
+   * El template reescrito, o `undefined` si no hay nada que traducir (queda el original, byte por byte). Un elemento
+   * que usa un componente/directiva sin uno de sus inputs `required` es error, como en el compilador de Angular.
+   */
+  rewrite(html: string, options: RewriteOptions = {}): string | undefined {
+    this.checkRequired = this.hasRequired && options.checkRequired !== false;
+    if (!this.checkRequired && !RESERVED_ATTRIBUTE.test(html)) return undefined;
     const fragment = parseFragment(html);
     return this.walk(fragment) ? serialize(fragment) : undefined;
   }
@@ -55,6 +70,7 @@ export class TemplateRewriter {
     const declarations = [
       ...new Set(this.matchers.filter((matcher) => TemplateRewriter.matches(matcher, element, attributes)).map((matcher) => matcher.declaration)),
     ];
+    if (this.checkRequired) TemplateRewriter.assertRequired(element, attributes, declarations);
 
     let changed = false;
     for (const attr of element.attrs) {
@@ -79,6 +95,20 @@ export class TemplateRewriter {
       changed = true;
     }
     return changed;
+  }
+
+  /** Cada input `required` de lo que matchea el elemento tiene que estar como atributo (o como su `ng-*` reservado). */
+  private static assertRequired(element: Element, attributes: string[], declarations: ManifestDeclaration[]): void {
+    for (const declaration of declarations) {
+      for (const input of declaration.inputs) {
+        if (!input.required) continue;
+        const reserved = input.mode === "<" ? ComponentBindings.reservedAttribute(input.name) : undefined;
+        if (attributes.includes(input.name) || (reserved !== undefined && attributes.includes(reserved))) continue;
+        throw new Error(
+          `<${element.tagName}>: falta el input requerido "${input.name}" de ${declaration.className} (${TemplateRewriter.kebab(input.name)}="...").`,
+        );
+      }
+    }
   }
 
   /** En un nativo: `disabled`/`disabled=""`/`disabled="disabled"` es HTML estático; `{{ }}` es otra cosa. */

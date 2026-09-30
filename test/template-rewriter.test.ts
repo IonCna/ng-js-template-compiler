@@ -85,4 +85,46 @@ describe("TemplateRewriter", () => {
       `<div><template><lib-rating ng-disabled="$.off"></lib-rating></template></div>`,
     );
   });
+
+  describe("@Input({ required: true })", () => {
+    const required = TemplateRewriter.from([
+      {
+        className: "LibCard",
+        kind: "component",
+        selector: "lib-card",
+        inputs: [
+          { property: "heading", name: "heading", mode: "<", required: true },
+          { property: "disabled", name: "disabled", mode: "<", required: true },
+          { property: "note", name: "note", mode: "<" },
+        ],
+        outputs: [],
+      },
+      {
+        className: "LibTip",
+        kind: "directive",
+        selector: "[libTip]",
+        inputs: [{ property: "libTip", name: "libTip", mode: "<", required: true }],
+        outputs: [],
+      },
+    ]);
+
+    it("un uso sin el atributo es error en build, como el compilador de Angular", () => {
+      expect(() => required.rewrite(`<div><lib-card disabled="$.off"></lib-card></div>`)).toThrow(
+        '<lib-card>: falta el input requerido "heading" de LibCard (heading="...").',
+      );
+    });
+
+    it("con todos los requeridos (también como ng-* o data-*) no hay error; sin nada que traducir queda igual", () => {
+      expect(required.rewrite(`<lib-card data-heading="$.title" ng-disabled="$.off"></lib-card>`)).toBeUndefined();
+      expect(required.rewrite(`<lib-card heading="$.title" disabled="$.off"></lib-card>`)).toBe(
+        `<lib-card heading="$.title" ng-disabled="$.off"></lib-card>`,
+      );
+      // El input que es el propio selector siempre está.
+      expect(required.rewrite(`<span lib-tip="'hola'"></span>`)).toBeUndefined();
+    });
+
+    it("con checkRequired: false (el markup de un spec) no se valida", () => {
+      expect(required.rewrite(`<lib-card></lib-card>`, { checkRequired: false })).toBeUndefined();
+    });
+  });
 });

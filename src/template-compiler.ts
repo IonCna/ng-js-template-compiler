@@ -44,11 +44,22 @@ export class TemplateCompiler {
     }
     if (literals.length === 0) return undefined;
 
-    const rewriter = await this.registry.rewriter();
+    const registry = await this.registry.rewriter();
+    // En un spec el markup puede ser cualquier fragmento armado a mano: los `required` se validan en los templates de la app.
+    const checkRequired = !/\.(spec|test)\.ts$/.test(path);
+    const rewriter = {
+      rewrite: (html: string, source: string): string | undefined => {
+        try {
+          return registry.rewrite(html, { checkRequired });
+        } catch (error) {
+          throw new Error(`ng-js-template-compiler: ${source} — ${error instanceof Error ? error.message : String(error)}`);
+        }
+      },
+    };
     const changed: TemplateLiteral[] = [];
     for (const literal of literals) {
       if (literal.kind === "template") {
-        const html = rewriter.rewrite(literal.value);
+        const html = rewriter.rewrite(literal.value, path);
         if (html !== undefined) changed.push({ ...literal, value: html });
         continue;
       }
@@ -56,7 +67,7 @@ export class TemplateCompiler {
       if (!source) continue;
       this.own(source, path);
       const html = await readFile(source, "utf8").catch(() => undefined);
-      const rewritten = html === undefined ? undefined : rewriter.rewrite(html);
+      const rewritten = html === undefined ? undefined : rewriter.rewrite(html, source);
       if (rewritten === undefined) continue;
       changed.push({ ...literal, value: TemplateCompiler.relativeUrl(path, await this.writeCache(source, rewritten)) });
     }

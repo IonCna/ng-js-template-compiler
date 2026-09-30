@@ -117,9 +117,17 @@ export class TemplateRewriter {
     return trimmed !== "" && trimmed.toLowerCase() !== name.toLowerCase() && !trimmed.includes("{{");
   }
 
+  /** La alternativa entera (tag, atributos con y sin valor, clases, `:not`), con los atributos normalizados como AngularJS. */
   private static matches(matcher: Matcher, element: Element, attributes: string[]): boolean {
-    if (matcher.restrict === "E") return element.tagName === TemplateRewriter.kebab(matcher.registrationName);
-    return attributes.includes(matcher.registrationName) && (!matcher.requiredTag || element.tagName === matcher.requiredTag.toLowerCase());
+    const classes = (element.attrs.find((attr) => attr.name === "class")?.value ?? "").split(/\s+/);
+    return SelectorParser.matches(matcher.compound, {
+      tagName: element.tagName,
+      attribute: (name) => {
+        const index = attributes.indexOf(name);
+        return index === -1 ? null : (element.attrs[index]?.value ?? "");
+      },
+      hasClass: (name) => classes.includes(name),
+    });
   }
 
   /** Como `directiveNormalize` de AngularJS: sin `data-`/`x-`, separadores `:`/`-`/`_` → camelCase. */

@@ -11,6 +11,12 @@ interface Matcher extends ParsedSelector {
 /** Un atributo reservado (`disabled=`, `disabled>`): si no aparece, no hace falta parsear el template. */
 const RESERVED_ATTRIBUTE = new RegExp(`(^|[\\s"':_-])(${Object.keys(ComponentBindings.RESERVED_INPUTS).join("|")})(\\s*=|[\\s/>])`, "i");
 
+/** Un pipe `async` sin argumentos (no `||`, no `async:`), y la pista barata para no recorrer el template si no hay. */
+const ASYNC_PIPE = /(^|[^|])\|(\s*)async\b(?!\s*:)/g;
+const ASYNC_PIPE_HINT = /\|\s*async\b/;
+const INTERPOLATION = /\{\{([\s\S]*?)\}\}/g;
+const ATTRIBUTE_VALUE = /(=\s*)(["'])([\s\S]*?)\2/g;
+
 /**
  * Traduce, en un template, los atributos booleanos nativos escritos como binding (`disabled="x"`) a la directiva de
  * AngularJS que los enlaza (`ng-disabled="x"`, ver `ComponentBindings.RESERVED_INPUTS`) — como `[disabled]="x"` en
@@ -48,10 +54,25 @@ export class TemplateRewriter {
    * que usa un componente/directiva sin uno de sus inputs `required` es error, como en el compilador de Angular.
    */
   rewrite(html: string, options: RewriteOptions = {}): string | undefined {
+    const source = TemplateRewriter.passScopeToAsync(html);
+    const unchanged = source === html ? undefined : source;
     this.checkRequired = this.hasRequired && options.checkRequired !== false;
-    if (!this.checkRequired && !RESERVED_ATTRIBUTE.test(html)) return undefined;
-    const fragment = parseFragment(html);
-    return this.walk(fragment) ? serialize(fragment) : undefined;
+    if (!this.checkRequired && !RESERVED_ATTRIBUTE.test(source)) return unchanged;
+    const fragment = parseFragment(source);
+    return this.walk(fragment) ? serialize(fragment) : unchanged;
+  }
+
+  /**
+   * `x | async` → `x | async:this`, en interpolaciones y valores de atributo. El filtro `async` de `ngjs-core`
+   * necesita el `$scope` de la expresión para desuscribirse cuando ese scope se destruye (en una expresión de
+   * AngularJS, `this` es el scope); así el template se escribe como en Angular. No toca `||` ni un `async:` ya escrito.
+   */
+  static passScopeToAsync(html: string): string {
+    if (!ASYNC_PIPE_HINT.test(html)) return html;
+    const withScope = (expression: string) => expression.replace(ASYNC_PIPE, "$1|$2async:this");
+    return html
+      .replace(INTERPOLATION, (_match, expression: string) => `{{${withScope(expression)}}}`)
+      .replace(ATTRIBUTE_VALUE, (_match, equals: string, quote: string, value: string) => `${equals}${quote}${withScope(value)}${quote}`);
   }
 
   private walk(parent: ParentNode): boolean {

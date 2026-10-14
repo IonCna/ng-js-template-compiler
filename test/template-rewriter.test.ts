@@ -127,4 +127,28 @@ describe("TemplateRewriter", () => {
       expect(required.rewrite(`<lib-card></lib-card>`, { checkRequired: false })).toBeUndefined();
     });
   });
+
+  describe("| async → | async:this (el filtro de ngjs-core necesita el scope)", () => {
+    it("en interpolaciones y en atributos, sin tocar el resto del template", () => {
+      expect(rewriter.rewrite(`<p class="x">{{ $.name$ | async }}</p>`)).toBe(`<p class="x">{{ $.name$ | async:this }}</p>`);
+      expect(rewriter.rewrite(`<li ng-repeat="n in $.items$ | async track by n">{{n}}</li>`)).toBe(
+        `<li ng-repeat="n in $.items$ | async:this track by n">{{n}}</li>`,
+      );
+      expect(rewriter.rewrite(`<b>{{ ($.total$|async) | currency }}</b>`)).toBe(`<b>{{ ($.total$|async:this) | currency }}</b>`);
+    });
+
+    it("con otro atributo reservado en el mismo template, hace las dos cosas", () => {
+      expect(rewriter.rewrite(`<button disabled="$.busy$ | async">{{ $.label$ | async }}</button>`)).toBe(
+        `<button ng-disabled="$.busy$ | async:this">{{ $.label$ | async:this }}</button>`,
+      );
+    });
+
+    it("deja igual `||`, un async: ya escrito, otro pipe que empieza con async y el texto sin pipe", () => {
+      expect(rewriter.rewrite(`<p>{{ $.a || async }}</p>`)).toBeUndefined();
+      expect(rewriter.rewrite(`<p>{{ $.a$ | async:this }}</p>`)).toBeUndefined();
+      expect(rewriter.rewrite(`<p>{{ $.a | asyncLabel }}</p>`)).toBeUndefined();
+      expect(rewriter.rewrite(`<p>Carga async de datos</p>`)).toBeUndefined();
+    });
+  });
 });
+

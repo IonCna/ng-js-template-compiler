@@ -33,6 +33,12 @@ export class TemplateRewriter {
   /** Hay algún `@Input({ required: true })`: todo template se recorre para validarlo, aunque no haya nada que traducir. */
   private readonly hasRequired: boolean;
   private checkRequired = true;
+  /**
+   * `rewrite()` por template: depende solo del HTML y de las declaraciones de este rewriter. `ngjs serve` vuelve a
+   * pasar cada template por acá en cada escaneo (cada cambio de un `.ts`); parsearlos todos de nuevo era buena parte
+   * de cada recarga.
+   */
+  private readonly rewritten = new Map<string, string | undefined>();
 
   private constructor(private readonly matchers: Matcher[]) {
     this.hasRequired = matchers.some((matcher) => matcher.declaration.inputs.some((input) => input.required));
@@ -54,6 +60,15 @@ export class TemplateRewriter {
    * que usa un componente/directiva sin uno de sus inputs `required` es error, como en el compilador de Angular.
    */
   rewrite(html: string, options: RewriteOptions = {}): string | undefined {
+    const key = `${options.checkRequired !== false}\0${html}`;
+    if (this.rewritten.has(key)) return this.rewritten.get(key);
+    // Un template inválido tira error: no queda en caché, la próxima vez se vuelve a reportar.
+    const result = this.rewriteUncached(html, options);
+    this.rewritten.set(key, result);
+    return result;
+  }
+
+  private rewriteUncached(html: string, options: RewriteOptions): string | undefined {
     const source = TemplateRewriter.passScopeToAsync(html);
     const unchanged = source === html ? undefined : source;
     this.checkRequired = this.hasRequired && options.checkRequired !== false;

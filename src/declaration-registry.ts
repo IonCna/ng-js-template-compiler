@@ -14,6 +14,8 @@ export class DeclarationRegistry {
   private librariesPromise?: ReturnType<typeof LibraryManifest.fromDependencies>;
   private known = new Set<string>();
   private readonly sources = new Map<string, string>();
+  /** El último rewriter y sus declaraciones (serializadas): se reusa si una relectura da las mismas. */
+  private last?: { declarations: string; rewriter: TemplateRewriter };
 
   constructor(private readonly roots: string[]) {}
 
@@ -41,6 +43,11 @@ export class DeclarationRegistry {
       Promise.all(this.roots.map((root) => ApplicationScanner.listTsFiles(root))),
     ]);
     this.known = new Set(files.flat().map((file) => resolve(file)));
-    return TemplateRewriter.from([...project.declarations, ...libraries]);
+    const all = [...project.declarations, ...libraries];
+    // Editar un componente sin tocar su selector ni sus inputs/outputs (lo común) deja las mismas declaraciones: el
+    // mismo rewriter conserva lo que ya reescribió (ver `TemplateRewriter.rewrite`).
+    const declarations = JSON.stringify(all);
+    if (this.last?.declarations !== declarations) this.last = { declarations, rewriter: TemplateRewriter.from(all) };
+    return this.last.rewriter;
   }
 }

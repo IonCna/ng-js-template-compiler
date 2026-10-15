@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { TemplateCompiler } from "@/template-compiler.ts";
+import { TemplateRewriter } from "@/template-rewriter.ts";
 
 describe("TemplateCompiler", () => {
   let dir: string;
@@ -126,6 +127,34 @@ export class RatingComponent {
     const position = originalPositionFor(new TraceMap(output.map as never), { line, column: lines[line - 1]!.indexOf("boom") });
     expect(position.line).toBe(8);
     expect(output.map.sourcesContent).toEqual([code]);
+  });
+
+  // `ngjs serve`: editar un componente relee las declaraciones del proyecto. Si salen las mismas (se tocó la lógica,
+  // no el selector ni los inputs), sigue el mismo rewriter con los templates que ya reescribió.
+  it("un cambio que no toca declaraciones conserva el rewriter; uno que sí, lo rehace", async () => {
+    const compiler = TemplateCompiler.create(src);
+    const rating = join(src, "rating.component.ts");
+    const host = join(src, "host.component.ts");
+    const hostCode = `@Component({ selector: "app-host", template: \`<app-rating disabled="$.off"></app-rating>\` })\nexport class Host {}`;
+    const ratingCode = (input: string, body = "") =>
+      `import { Component, Input } from "ngjs-core";\n\n@Component({ selector: "app-rating", template: "<span></span>" })\nexport class RatingComponent {\n  @Input() ${input} = false;\n${body}}\n`;
+
+    await compiler.transform(ratingCode("disabled"), rating);
+    await compiler.transform(hostCode, host);
+    const from = vi.spyOn(TemplateRewriter, "from");
+
+    const logic = ratingCode("disabled", "  toggle(): void {}\n");
+    await writeFile(rating, logic);
+    await compiler.transform(logic, rating);
+    expect((await compiler.transform(hostCode, host))?.code).toContain(`ng-disabled="$.off"`);
+    expect(from).not.toHaveBeenCalled();
+
+    const renamed = ratingCode("off");
+    await writeFile(rating, renamed);
+    await compiler.transform(renamed, rating);
+    await compiler.transform(hostCode, host);
+    expect(from).toHaveBeenCalledTimes(1);
+    from.mockRestore();
   });
 });
 

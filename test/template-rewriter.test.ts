@@ -1,5 +1,5 @@
 import type { ManifestDeclaration } from "ng-js-compiler";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TemplateRewriter } from "@/template-rewriter.ts";
 
 const declarations: ManifestDeclaration[] = [
@@ -126,6 +126,26 @@ describe("TemplateRewriter", () => {
     it("con checkRequired: false (el markup de un spec) no se valida", () => {
       expect(required.rewrite(`<lib-card></lib-card>`, { checkRequired: false })).toBeUndefined();
     });
+
+    // `rewrite()` guarda su resultado por template: ni un error ni la otra variante de `checkRequired` salen de ahí.
+    it("el resultado guardado de un template no tapa un error ni la validación de la otra variante", () => {
+      const html = `<lib-card></lib-card>`;
+      expect(required.rewrite(html, { checkRequired: false })).toBeUndefined();
+      expect(() => required.rewrite(html)).toThrow('falta el input requerido "heading"');
+      expect(() => required.rewrite(html)).toThrow('falta el input requerido "heading"');
+      expect(required.rewrite(html, { checkRequired: false })).toBeUndefined();
+    });
+  });
+
+  it("el mismo template da el mismo resultado sin volver a recorrerlo", () => {
+    const rewriter = TemplateRewriter.from(declarations);
+    const html = `<lib-rating disabled="$.off"></lib-rating>`;
+    const first = rewriter.rewrite(html);
+    const walk = vi.spyOn(rewriter as unknown as { walk: () => boolean }, "walk");
+
+    expect(rewriter.rewrite(html)).toBe(first);
+    expect(first).toBe(`<lib-rating ng-disabled="$.off"></lib-rating>`);
+    expect(walk).not.toHaveBeenCalled();
   });
 
   describe("| async → | async:this (el filtro de ngjs-core necesita el scope)", () => {

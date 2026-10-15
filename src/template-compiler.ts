@@ -22,6 +22,8 @@ export class TemplateCompiler {
   private readonly projectDir: string;
   /** `.html` original → los `.ts` que lo usan (para `ownersOf`). */
   private readonly owners = new Map<string, Set<string>>();
+  /** El markup de cada spec (`CodeTemplates.findMarkup`, que parsea el archivo entero) mientras su código no cambie. */
+  private readonly markup = new Map<string, { code: string; literals: TemplateLiteral[] }>();
 
   private constructor(roots: string[], options: TemplateCompilerOptions) {
     this.registry = new DeclarationRegistry(roots);
@@ -40,7 +42,7 @@ export class TemplateCompiler {
     // Un spec arma templates en variables o los pasa a `$compile`/helpers en runtime: todo string con markup.
     if (/\.(spec|test)\.ts$/.test(path)) {
       const taken = new Set(literals.map((literal) => literal.start));
-      literals.push(...CodeTemplates.findMarkup(code).filter((literal) => !taken.has(literal.start)));
+      literals.push(...this.findMarkup(code, path).filter((literal) => !taken.has(literal.start)));
     }
     if (literals.length === 0) return undefined;
 
@@ -72,6 +74,14 @@ export class TemplateCompiler {
       changed.push({ ...literal, value: TemplateCompiler.relativeUrl(path, await this.writeCache(source, rewritten)) });
     }
     return changed.length ? CodeTemplates.replaceMapped(code, path, changed) : undefined;
+  }
+
+  private findMarkup(code: string, path: string): TemplateLiteral[] {
+    const cached = this.markup.get(path);
+    if (cached?.code === code) return cached.literals;
+    const literals = CodeTemplates.findMarkup(code);
+    this.markup.set(path, { code, literals });
+    return literals;
   }
 
   /** Como lo resuelve el pipeline: relativo al `.ts` (con o sin `./`); `/…` y `src/…` desde el proyecto; no una URL. */
